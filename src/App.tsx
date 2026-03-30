@@ -62,7 +62,7 @@ async function askGemini(prompt: string, systemContext: string): Promise<string>
   const genAI = new GoogleGenerativeAI(currentKey);
 
   // 2. 상담사 모델 설정 (가장 안정적이고 전 세계 어디서나 작동하는 gemini-pro 모델로 변경합니다)
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
   // 3. 상담 원칙 설정
   const fullPrompt = `[상담사 페르소나 및 원칙]
