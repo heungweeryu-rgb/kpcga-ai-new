@@ -34,22 +34,23 @@ import {
 } from 'firebase/auth';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// === 빌드 에러 방지를 위한 안전한 Firebase 설정 로직 ===
+// === 빌드 에러 방지를 위한 초강력 안전 Firebase 설정 ===
 const getSafeFirebaseConfig = () => {
   try {
-    // @ts-ignore: 빌드 타임에 정의되지 않은 전역 변수 무시
-    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-      // @ts-ignore
-      return JSON.parse(__firebase_config);
+    // @ts-ignore
+    const globalConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+    if (globalConfig) {
+      return JSON.parse(globalConfig);
     }
   } catch (e) {
-    // 빌드 중에는 에러를 내지 않고 빈 값을 넘깁니다.
+    // 빌드 시점에 설정이 없더라도 에러를 내지 않습니다.
   }
-  return { apiKey: "fake-key" }; // 빌드 통과용 가짜 키
+  // 빌드 통과를 위한 최소한의 가짜 설정 (실제 구동시에는 위 로직이 작동함)
+  return { apiKey: "AIzaSy_fake_key", authDomain: "fake.firebaseapp.com", projectId: "fake-id" };
 };
 
 const firebaseConfig = getSafeFirebaseConfig();
-// Firebase 중복 초기화 방지
+// Firebase 중복 초기화 에러 방지
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
@@ -57,7 +58,7 @@ const auth = getAuth(app);
 // 유흥위 선생님의 메인 프로젝트 ID
 const appId = 'kpcga-ai-new-g1az';
 
-// === Gemini AI 설정 (Vercel 환경변수 우선) ===
+// === Gemini AI 설정 (Vercel 환경변수 VITE_GEMINI_API_KEY 우선 적용) ===
 const getSafeApiKey = () => {
   try {
     // @ts-ignore
@@ -88,7 +89,7 @@ const App = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiInput, setAiInput] = useState("");
 
-  // 1. 인증 초기화
+  // 1. 초기 인증
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -108,9 +109,9 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. 실시간 데이터 연동
+  // 2. 실시간 데이터 연동 (가짜 키일 경우 중단하여 보안 규칙 에러 방지)
   useEffect(() => {
-    if (!user || firebaseConfig.apiKey === "fake-key") return;
+    if (!user || firebaseConfig.apiKey === "AIzaSy_fake_key") return;
 
     const requestsRef = collection(db, 'artifacts', appId, 'public', 'data', 'requests');
     const q = query(requestsRef, orderBy('timestamp', 'desc'));
@@ -154,7 +155,7 @@ const App = () => {
       setNewRequest({ title: "", details: "" });
       alert("상담 신청이 완료되었습니다.");
     } catch (err) {
-      alert("서버 연결에 실패했습니다.");
+      alert("전송 중 오류가 발생했습니다.");
     }
   };
 
@@ -168,7 +169,7 @@ const App = () => {
       });
       setIsEditingNotice(false);
     } catch (err) {
-      alert("저장 중 오류가 발생했습니다.");
+      alert("저장 권한이 없습니다.");
     }
   };
 
@@ -216,17 +217,11 @@ const App = () => {
           
           <div className="flex items-center gap-4">
             {isAdmin ? (
-              <button 
-                onClick={() => setIsAdmin(false)}
-                className="flex items-center gap-2 bg-rose-500/10 text-rose-400 px-5 py-2.5 rounded-xl text-sm font-bold border border-rose-500/20"
-              >
+              <button onClick={() => setIsAdmin(false)} className="flex items-center gap-2 bg-rose-500/10 text-rose-400 px-5 py-2.5 rounded-xl text-sm font-bold border border-rose-500/20">
                 <LogOut size={18} /> 로그아웃
               </button>
             ) : (
-              <button 
-                onClick={() => setShowAdminLogin(true)}
-                className="w-12 h-12 flex items-center justify-center text-slate-500 hover:text-white bg-white/5 rounded-2xl border border-white/5"
-              >
+              <button onClick={() => setShowAdminLogin(true)} className="w-12 h-12 flex items-center justify-center text-slate-500 hover:text-white bg-white/5 rounded-2xl border border-white/5 transition-all">
                 <Settings size={22} />
               </button>
             )}
@@ -270,57 +265,29 @@ const App = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           <section className="space-y-12">
             <div className="bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-10 shadow-xl backdrop-blur-sm">
-              <h2 className="text-3xl font-bold mb-8 flex items-center gap-3 text-indigo-500">
-                <Edit3 size={28} /> <span>상담 신청하기</span>
-              </h2>
+              <h2 className="text-3xl font-bold mb-8 flex items-center gap-3 text-indigo-500"><Edit3 size={28} /> <span>상담 신청하기</span></h2>
               <form onSubmit={submitRequest} className="space-y-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">상담 제목 (전체 공개)</label>
-                  <input 
-                    type="text"
-                    placeholder="제목을 입력하세요"
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-lg"
-                    value={newRequest.title}
-                    onChange={(e) => setNewRequest({...newRequest, title: e.target.value})}
-                  />
+                  <input type="text" placeholder="제목을 입력하세요" className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-lg font-medium" value={newRequest.title} onChange={(e) => setNewRequest({...newRequest, title: e.target.value})} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-rose-400 uppercase tracking-widest mb-2 ml-1">비밀 상담 내용 (상담사만 확인)</label>
-                  <textarea 
-                    placeholder="상세 내용을 적어주세요. 다른 내담자에게는 절대 공개되지 않습니다."
-                    rows={5}
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    value={newRequest.details}
-                    onChange={(e) => setNewRequest({...newRequest, details: e.target.value})}
-                  />
+                  <textarea placeholder="상세 내용을 적어주세요. 다른 내담자에게는 절대 공개되지 않습니다." rows={5} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" value={newRequest.details} onChange={(e) => setNewRequest({...newRequest, details: e.target.value})} />
                 </div>
-                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 text-lg">
-                  신청 완료 <ChevronRight size={22} />
-                </button>
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 text-lg">신청 완료 <ChevronRight size={22} /></button>
               </form>
             </div>
 
             <div className="bg-gradient-to-br from-indigo-600/10 via-slate-900/50 to-slate-900 border border-indigo-500/20 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
-              <h2 className="text-3xl font-bold mb-8 flex items-center gap-4">
-                <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg font-black italic text-white text-xs">AI</div>
-                실시간 AI 상담
-              </h2>
+              <h2 className="text-3xl font-bold mb-8 flex items-center gap-4"><div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg font-black italic text-white text-xs">AI</div> 실시간 AI 상담</h2>
               <div className="space-y-6">
                 <div className="relative">
-                  <input 
-                    type="text"
-                    placeholder="지금 기분을 한 마디로 말해보세요..."
-                    className="w-full bg-white/5 border border-white/5 rounded-2xl p-5 pr-16 focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-slate-600"
-                    value={aiInput}
-                    onChange={(e) => setAiInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && askAi()}
-                  />
-                  <button onClick={askAi} disabled={isAiLoading} className="absolute right-2 top-2 w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-500 shadow-lg disabled:opacity-50">
-                    <Send size={20} />
-                  </button>
+                  <input type="text" placeholder="지금 기분을 말해보세요..." className="w-full bg-white/5 border border-white/5 rounded-2xl p-5 pr-16 focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-slate-600" value={aiInput} onChange={(e) => setAiInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && askAi()} />
+                  <button onClick={askAi} disabled={isAiLoading} className="absolute right-2 top-2 w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-500 shadow-lg disabled:opacity-50"><Send size={20} /></button>
                 </div>
                 <AnimatePresence mode="wait">
-                  {isAiLoading && <div className="text-center py-4 text-indigo-400 animate-pulse font-bold italic">상담사가 답변을 생각 중입니다...</div>}
+                  {isAiLoading && <div className="text-center py-4 text-indigo-400 animate-pulse font-bold italic">답변을 생각 중입니다...</div>}
                   {aiMessage && !isAiLoading && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-600/10 rounded-3xl p-8 border border-indigo-500/20 text-slate-200 leading-relaxed whitespace-pre-wrap relative shadow-inner">
                       <div className="absolute -top-3 -left-3 w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg"><User size={16} /></div>
@@ -334,9 +301,7 @@ const App = () => {
 
           <section className="space-y-8">
             <div className="flex items-center justify-between px-2">
-              <h2 className="text-3xl font-bold flex items-center gap-3 text-indigo-500">
-                <User size={28} /> <span>실시간 접수 현황</span>
-              </h2>
+              <h2 className="text-3xl font-bold flex items-center gap-3 text-indigo-500"><User size={28} /> <span>실시간 접수 현황</span></h2>
               <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/10">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 <span className="text-[10px] text-green-400 font-black tracking-widest uppercase">Live Connection</span>
@@ -345,10 +310,7 @@ const App = () => {
             
             <div className="space-y-6 max-h-[1000px] overflow-y-auto pr-4 custom-scrollbar pb-12">
               {requests.length === 0 ? (
-                <div className="text-center py-32 text-slate-700 border-2 border-dashed border-white/5 rounded-[3rem] bg-white/5 flex flex-col items-center gap-4">
-                  <Lock size={40} className="opacity-20" />
-                  아직 접수된 상담 내역이 없습니다.
-                </div>
+                <div className="text-center py-32 text-slate-700 border-2 border-dashed border-white/5 rounded-[3rem] bg-white/5 flex flex-col items-center gap-4"><Lock size={40} className="opacity-20" /> 아직 접수된 내역이 없습니다.</div>
               ) : (
                 requests.map((req) => (
                   <motion.div key={req.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`bg-slate-900/50 border rounded-[2rem] p-8 transition-all relative overflow-hidden ${isAdmin ? 'border-indigo-500/40 bg-indigo-500/5 shadow-indigo-500/10 ring-1 ring-indigo-500/20' : 'border-white/5 shadow-black/50'}`}>
@@ -362,22 +324,15 @@ const App = () => {
                       </div>
                       {isAdmin && <CheckCircle className="text-indigo-500" size={24} />}
                     </div>
-
                     {isAdmin ? (
                       <div className="mt-6 p-6 bg-indigo-600/10 rounded-2xl border border-indigo-500/20 space-y-3 shadow-inner">
-                        <div className="flex items-center gap-2 text-indigo-400">
-                          <Eye size={16} />
-                          <h5 className="text-[11px] font-black uppercase tracking-widest">상담 상세 내용 (관리자 전용)</h5>
-                        </div>
+                        <div className="flex items-center gap-2 text-indigo-400"><Eye size={16} /><h5 className="text-[11px] font-black uppercase tracking-widest">상담 상세 내용 (관리자 전용)</h5></div>
                         <p className="text-slate-200 text-sm whitespace-pre-wrap leading-relaxed font-medium">{req.details}</p>
                       </div>
                     ) : (
-                      <div className="mt-6 p-6 bg-black/40 rounded-2xl border border-white/5 flex flex-col items-center gap-3 text-slate-500 text-center shadow-inner">
+                      <div className="mt-6 p-6 bg-black/40 rounded-2xl border border-white/5 flex flex-col items-center gap-3 text-slate-500 text-center shadow-inner group-hover:bg-black/50 transition-all">
                         <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center text-slate-600"><Lock size={16} /></div>
-                        <div className="space-y-1">
-                          <p className="text-[12px] font-bold text-slate-400">비밀 보호 설정 활성화</p>
-                          <p className="text-[10px] text-slate-600 italic">상세 내용은 담당 상담사에게만 안전하게 보호됩니다.</p>
-                        </div>
+                        <div className="space-y-1"><p className="text-[12px] font-bold text-slate-400">비밀 보호 설정 활성화</p><p className="text-[10px] text-slate-600 italic">상세 내용은 담당 상담사에게만 안전하게 보호됩니다.</p></div>
                       </div>
                     )}
                   </motion.div>
@@ -393,23 +348,9 @@ const App = () => {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAdminLogin(false)} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
             <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }} className="bg-[#0a0c10] border border-white/10 p-10 rounded-[2.5rem] w-full max-w-md relative z-10 shadow-2xl text-center">
-              <div className="flex justify-between items-center mb-8">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400"><ShieldCheck size={20} /></div>
-                  <h3 className="text-2xl font-bold">Counselor Access</h3>
-                </div>
-                <button onClick={() => setShowAdminLogin(false)} className="text-slate-500 hover:text-white transition-colors"><X size={24} /></button>
-              </div>
+              <div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400"><ShieldCheck size={20} /></div><h3 className="text-2xl font-bold">Counselor Access</h3></div><button onClick={() => setShowAdminLogin(false)} className="text-slate-500 hover:text-white transition-colors"><X size={24} /></button></div>
               <p className="text-slate-400 text-sm mb-8">협회 관리용 비밀번호를 입력해 주세요.</p>
-              <input 
-                type="password" 
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-8 text-center text-3xl tracking-[0.5em] outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono"
-                placeholder="••••"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()}
-                autoFocus
-              />
+              <input type="password" className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-8 text-center text-3xl tracking-[0.5em] outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono" placeholder="••••" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()} autoFocus />
               <button onClick={handleAdminLogin} className="w-full bg-indigo-600 py-5 rounded-2xl font-black uppercase hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/30">포털 접속</button>
             </motion.div>
           </div>
