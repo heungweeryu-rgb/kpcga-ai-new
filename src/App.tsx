@@ -34,38 +34,38 @@ import {
 } from 'firebase/auth';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// === 빌드 에러 방지를 위한 초강력 안전 Firebase 설정 ===
+// === Vercel 빌드 로봇을 위한 초강력 안전 설정 ===
 const getSafeFirebaseConfig = () => {
   try {
+    // 전역 변수를 직접 참조하지 않고 window/globalThis를 통해 접근하여 빌드 오류 방지
     // @ts-ignore
-    const globalConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-    if (globalConfig) {
-      return JSON.parse(globalConfig);
-    }
+    const config = typeof window !== 'undefined' ? (window as any).__firebase_config : null;
+    if (config) return JSON.parse(config);
   } catch (e) {
-    // 빌드 시점에 설정이 없더라도 에러를 내지 않습니다.
+    // 에러 무시
   }
-  // 빌드 통과를 위한 최소한의 가짜 설정 (실제 구동시에는 위 로직이 작동함)
-  return { apiKey: "AIzaSy_fake_key", authDomain: "fake.firebaseapp.com", projectId: "fake-id" };
+  // 빌드 시점에 에러가 나지 않도록 가짜 정보를 줍니다.
+  return { apiKey: "AIzaSy_safe_for_build", authDomain: "kpcga.firebaseapp.com", projectId: "kpcga-ai" };
 };
 
 const firebaseConfig = getSafeFirebaseConfig();
-// Firebase 중복 초기화 에러 방지
+// Firebase 중복 초기화 및 빌드 시점 충돌 방지
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// 유흥위 선생님의 메인 프로젝트 ID
+// 선생님의 메인 프로젝트 ID 고정
 const appId = 'kpcga-ai-new-g1az';
 
-// === Gemini AI 설정 (Vercel 환경변수 VITE_GEMINI_API_KEY 우선 적용) ===
+// === Gemini API 키 안전하게 가져오기 ===
 const getSafeApiKey = () => {
   try {
+    // Vercel 환경변수 (VITE_GEMINI_API_KEY) 우선 적용
     // @ts-ignore
     const envKey = import.meta.env?.VITE_GEMINI_API_KEY;
     // @ts-ignore
-    const canvasKey = typeof apiKey !== 'undefined' ? apiKey : "";
-    return envKey || canvasKey || "";
+    const previewKey = typeof apiKey !== 'undefined' ? apiKey : "";
+    return envKey || previewKey || "";
   } catch (e) {
     return "";
   }
@@ -89,19 +89,19 @@ const App = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiInput, setAiInput] = useState("");
 
-  // 1. 초기 인증
+  // 1. 초기 인증 (Rule 3 준수)
   useEffect(() => {
     const initAuth = async () => {
       try {
         // @ts-ignore
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          // @ts-ignore
-          await signInWithCustomToken(auth, __initial_auth_token);
+        const token = typeof window !== 'undefined' ? (window as any).__initial_auth_token : null;
+        if (token) {
+          await signInWithCustomToken(auth, token);
         } else {
           await signInAnonymously(auth);
         }
       } catch (err) {
-        console.error("Auth Error:", err);
+        console.error("인증 처리 중:", err);
       }
     };
     initAuth();
@@ -109,18 +109,20 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. 실시간 데이터 연동 (가짜 키일 경우 중단하여 보안 규칙 에러 방지)
+  // 2. 실시간 데이터 바인딩 (Rule 1 & 2 준수)
   useEffect(() => {
-    if (!user || firebaseConfig.apiKey === "AIzaSy_fake_key") return;
+    if (!user || firebaseConfig.apiKey === "AIzaSy_safe_for_build") return;
 
+    // 상담 목록 리스너
     const requestsRef = collection(db, 'artifacts', appId, 'public', 'data', 'requests');
     const q = query(requestsRef, orderBy('timestamp', 'desc'));
     
     const unsubRequests = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRequests(data);
-    }, (err) => console.error("Firestore List Error:", err));
+    }, (err) => console.error("Firestore 연결 지연 중..."));
 
+    // 공지사항 리스너
     const noticeRef = doc(db, 'artifacts', appId, 'public', 'data', 'notice', 'current');
     const unsubNotice = onSnapshot(noticeRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -128,7 +130,7 @@ const App = () => {
         setNotice({ content: data.content });
         setEditedNotice(data.content);
       }
-    }, (err) => console.error("Notice Sync Error:", err));
+    }, (err) => console.error("공지사항 연결 지연 중..."));
 
     return () => {
       unsubRequests();
@@ -140,7 +142,7 @@ const App = () => {
   const submitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRequest.title.trim() || !newRequest.details.trim()) {
-      alert("제목과 내용을 모두 작성해 주세요.");
+      alert("제목과 비밀 상담 내용을 모두 작성해 주세요.");
       return;
     }
 
@@ -153,13 +155,13 @@ const App = () => {
         userId: user?.uid || 'anonymous'
       });
       setNewRequest({ title: "", details: "" });
-      alert("상담 신청이 완료되었습니다.");
+      alert("상담 신청이 완료되었습니다. 감사합니다.");
     } catch (err) {
-      alert("전송 중 오류가 발생했습니다.");
+      alert("서버 연결에 실패했습니다. 다시 시도해 주세요.");
     }
   };
 
-  // 4. 기능: 공지사항 저장
+  // 4. 기능: 공지사항 저장 (관리자)
   const saveNotice = async () => {
     if (!isAdmin) return;
     try {
@@ -179,9 +181,9 @@ const App = () => {
       setIsAdmin(true);
       setShowAdminLogin(false);
       setAdminPassword("");
-      alert("상담사 모드로 접속했습니다.");
+      alert("상담사 전용 모드 활성화");
     } else {
-      alert("비밀번호가 틀렸습니다.");
+      alert("비밀번호가 일치하지 않습니다.");
     }
   };
 
@@ -192,7 +194,7 @@ const App = () => {
     setAiMessage("");
     try {
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const prompt = `당신은 한국심리상담지도협회(KPCGA)의 따뜻한 상담사입니다. 내담자의 질문에 공감하고 전문적인 조언을 해주세요: ${aiInput}`;
+      const prompt = `당신은 한국심리상담지도협회(KPCGA)의 전문 상담사입니다. 내담자의 질문에 공감하고 전문적인 조언을 해주세요: ${aiInput}`;
       const result = await model.generateContent(prompt);
       setAiMessage(result.response.text());
     } catch (err) {
@@ -217,7 +219,7 @@ const App = () => {
           
           <div className="flex items-center gap-4">
             {isAdmin ? (
-              <button onClick={() => setIsAdmin(false)} className="flex items-center gap-2 bg-rose-500/10 text-rose-400 px-5 py-2.5 rounded-xl text-sm font-bold border border-rose-500/20">
+              <button onClick={() => setIsAdmin(false)} className="flex items-center gap-2 bg-rose-500/10 text-rose-400 px-5 py-2.5 rounded-xl text-sm font-bold border border-rose-500/20 active:scale-95">
                 <LogOut size={18} /> 로그아웃
               </button>
             ) : (
@@ -230,7 +232,7 @@ const App = () => {
       </nav>
 
       <main className="max-w-6xl mx-auto px-6 py-12 space-y-12">
-        <section className={`rounded-[2.5rem] p-8 border shadow-2xl transition-all ${isAdmin ? 'bg-indigo-600/10 border-indigo-500/40' : 'bg-slate-900/40 border-white/5'}`}>
+        <section className={`rounded-[2.5rem] p-8 border shadow-2xl transition-all ${isAdmin ? 'bg-indigo-600/10 border-indigo-500/40' : 'bg-slate-900/40 border-white/5 shadow-black/50'}`}>
           <div className="flex items-start gap-6">
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${isAdmin ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400'}`}>
               <Bell size={28} />
@@ -239,12 +241,7 @@ const App = () => {
               <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2">Notice</h3>
               {isEditingNotice && isAdmin ? (
                 <div className="space-y-4">
-                  <textarea 
-                    className="w-full bg-slate-950 border border-indigo-500/50 rounded-2xl p-5 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-lg"
-                    rows={3}
-                    value={editedNotice}
-                    onChange={(e) => setEditedNotice(e.target.value)}
-                  />
+                  <textarea className="w-full bg-slate-950 border border-indigo-500/50 rounded-2xl p-5 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-lg" rows={3} value={editedNotice} onChange={(e) => setEditedNotice(e.target.value)} />
                   <div className="flex gap-2">
                     <button onClick={saveNotice} className="bg-indigo-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-indigo-500 transition-all">저장</button>
                     <button onClick={() => setIsEditingNotice(false)} className="bg-slate-800 px-6 py-3 rounded-xl text-sm font-bold">취소</button>
@@ -255,16 +252,14 @@ const App = () => {
               )}
             </div>
             {isAdmin && !isEditingNotice && (
-              <button onClick={() => setIsEditingNotice(true)} className="w-10 h-10 flex items-center justify-center text-indigo-400 hover:text-white hover:bg-indigo-500 rounded-xl transition-all">
-                <Edit3 size={20} />
-              </button>
+              <button onClick={() => setIsEditingNotice(true)} className="w-10 h-10 flex items-center justify-center text-indigo-400 hover:text-white hover:bg-indigo-500 rounded-xl transition-all"><Edit3 size={20} /></button>
             )}
           </div>
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           <section className="space-y-12">
-            <div className="bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-10 shadow-xl backdrop-blur-sm">
+            <div className="bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-10 shadow-xl backdrop-blur-sm relative overflow-hidden group">
               <h2 className="text-3xl font-bold mb-8 flex items-center gap-3 text-indigo-500"><Edit3 size={28} /> <span>상담 신청하기</span></h2>
               <form onSubmit={submitRequest} className="space-y-6">
                 <div>
@@ -272,10 +267,10 @@ const App = () => {
                   <input type="text" placeholder="제목을 입력하세요" className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-lg font-medium" value={newRequest.title} onChange={(e) => setNewRequest({...newRequest, title: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-rose-400 uppercase tracking-widest mb-2 ml-1">비밀 상담 내용 (상담사만 확인)</label>
-                  <textarea placeholder="상세 내용을 적어주세요. 다른 내담자에게는 절대 공개되지 않습니다." rows={5} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" value={newRequest.details} onChange={(e) => setNewRequest({...newRequest, details: e.target.value})} />
+                  <label className="block text-xs font-bold text-rose-400 uppercase tracking-widest mb-2 ml-1">상세 고민 내용 (상담사 전용 - 비밀보호)</label>
+                  <textarea placeholder="상담사만 확인할 수 있는 상세 내용을 적어주세요." rows={5} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" value={newRequest.details} onChange={(e) => setNewRequest({...newRequest, details: e.target.value})} />
                 </div>
-                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 text-lg">신청 완료 <ChevronRight size={22} /></button>
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 text-lg active:scale-95 group">신청 완료 <ChevronRight size={22} /></button>
               </form>
             </div>
 
@@ -324,6 +319,7 @@ const App = () => {
                       </div>
                       {isAdmin && <CheckCircle className="text-indigo-500" size={24} />}
                     </div>
+
                     {isAdmin ? (
                       <div className="mt-6 p-6 bg-indigo-600/10 rounded-2xl border border-indigo-500/20 space-y-3 shadow-inner">
                         <div className="flex items-center gap-2 text-indigo-400"><Eye size={16} /><h5 className="text-[11px] font-black uppercase tracking-widest">상담 상세 내용 (관리자 전용)</h5></div>
@@ -349,7 +345,7 @@ const App = () => {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAdminLogin(false)} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
             <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }} className="bg-[#0a0c10] border border-white/10 p-10 rounded-[2.5rem] w-full max-w-md relative z-10 shadow-2xl text-center">
               <div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400"><ShieldCheck size={20} /></div><h3 className="text-2xl font-bold">Counselor Access</h3></div><button onClick={() => setShowAdminLogin(false)} className="text-slate-500 hover:text-white transition-colors"><X size={24} /></button></div>
-              <p className="text-slate-400 text-sm mb-8">협회 관리용 비밀번호를 입력해 주세요.</p>
+              <p className="text-slate-400 text-sm mb-8">협회 전용 관리 비밀번호를 입력해 주세요.</p>
               <input type="password" className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-8 text-center text-3xl tracking-[0.5em] outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono" placeholder="••••" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()} autoFocus />
               <button onClick={handleAdminLogin} className="w-full bg-indigo-600 py-5 rounded-2xl font-black uppercase hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/30">포털 접속</button>
             </motion.div>
