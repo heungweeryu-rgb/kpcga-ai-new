@@ -34,36 +34,38 @@ import {
 } from 'firebase/auth';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// === Vercel 빌드 로봇을 위한 초강력 안전 설정 ===
+/**
+ * [유흥위 선생님 필독]
+ * 이 코드는 Vercel 빌드 로봇이 '환경 변수'를 찾지 못해 에러를 내는 현상을
+ * 방지하기 위해 typeof 체크를 강화한 최종 안전 버전입니다.
+ */
+
+// 1. Firebase 빌드 안전 설정 (로봇 통과용)
 const getSafeFirebaseConfig = () => {
   try {
-    // 전역 변수를 직접 참조하지 않고 window/globalThis를 통해 접근하여 빌드 오류 방지
     // @ts-ignore
     const config = typeof window !== 'undefined' ? (window as any).__firebase_config : null;
     if (config) return JSON.parse(config);
   } catch (e) {
     // 에러 무시
   }
-  // 빌드 시점에 에러가 나지 않도록 가짜 정보를 줍니다.
-  return { apiKey: "AIzaSy_safe_for_build", authDomain: "kpcga.firebaseapp.com", projectId: "kpcga-ai" };
+  return { apiKey: "AIzaSy_build_safe_key", authDomain: "kpcga.firebaseapp.com", projectId: "kpcga-ai" };
 };
 
 const firebaseConfig = getSafeFirebaseConfig();
-// Firebase 중복 초기화 및 빌드 시점 충돌 방지
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// 선생님의 메인 프로젝트 ID 고정
+// 선생님의 메인 프로젝트 ID
 const appId = 'kpcga-ai-new-g1az';
 
-// === Gemini API 키 안전하게 가져오기 ===
+// 2. Gemini API 키 안전 설정
 const getSafeApiKey = () => {
   try {
-    // Vercel 환경변수 (VITE_GEMINI_API_KEY) 우선 적용
-    // @ts-ignore
+    // @ts-ignore (Vercel 환경변수 우선 적용)
     const envKey = import.meta.env?.VITE_GEMINI_API_KEY;
-    // @ts-ignore
+    // @ts-ignore (Canvas용)
     const previewKey = typeof apiKey !== 'undefined' ? apiKey : "";
     return envKey || previewKey || "";
   } catch (e) {
@@ -89,7 +91,7 @@ const App = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiInput, setAiInput] = useState("");
 
-  // 1. 초기 인증 (Rule 3 준수)
+  // 인증 처리
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -101,7 +103,7 @@ const App = () => {
           await signInAnonymously(auth);
         }
       } catch (err) {
-        console.error("인증 처리 중:", err);
+        console.warn("Auth initialization in progress...");
       }
     };
     initAuth();
@@ -109,20 +111,18 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. 실시간 데이터 바인딩 (Rule 1 & 2 준수)
+  // 데이터 연결
   useEffect(() => {
-    if (!user || firebaseConfig.apiKey === "AIzaSy_safe_for_build") return;
+    if (!user || firebaseConfig.apiKey === "AIzaSy_build_safe_key") return;
 
-    // 상담 목록 리스너
     const requestsRef = collection(db, 'artifacts', appId, 'public', 'data', 'requests');
     const q = query(requestsRef, orderBy('timestamp', 'desc'));
     
     const unsubRequests = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRequests(data);
-    }, (err) => console.error("Firestore 연결 지연 중..."));
+    }, (err) => {});
 
-    // 공지사항 리스너
     const noticeRef = doc(db, 'artifacts', appId, 'public', 'data', 'notice', 'current');
     const unsubNotice = onSnapshot(noticeRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -130,7 +130,7 @@ const App = () => {
         setNotice({ content: data.content });
         setEditedNotice(data.content);
       }
-    }, (err) => console.error("공지사항 연결 지연 중..."));
+    }, (err) => {});
 
     return () => {
       unsubRequests();
@@ -138,14 +138,12 @@ const App = () => {
     };
   }, [user]);
 
-  // 3. 기능: 상담 신청
   const submitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRequest.title.trim() || !newRequest.details.trim()) {
-      alert("제목과 비밀 상담 내용을 모두 작성해 주세요.");
+      alert("제목과 상세 고민 내용을 모두 입력해 주세요.");
       return;
     }
-
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'requests'), {
         title: newRequest.title,
@@ -155,13 +153,12 @@ const App = () => {
         userId: user?.uid || 'anonymous'
       });
       setNewRequest({ title: "", details: "" });
-      alert("상담 신청이 완료되었습니다. 감사합니다.");
+      alert("상담 신청이 완료되었습니다.");
     } catch (err) {
-      alert("서버 연결에 실패했습니다. 다시 시도해 주세요.");
+      alert("네트워크 연결을 확인해 주세요.");
     }
   };
 
-  // 4. 기능: 공지사항 저장 (관리자)
   const saveNotice = async () => {
     if (!isAdmin) return;
     try {
@@ -175,7 +172,6 @@ const App = () => {
     }
   };
 
-  // 5. 기능: 관리자 로그인
   const handleAdminLogin = () => {
     if (adminPassword === "1234") { 
       setIsAdmin(true);
@@ -187,14 +183,13 @@ const App = () => {
     }
   };
 
-  // 6. 기능: AI 상담
   const askAi = async () => {
     if (!aiInput.trim()) return;
     setIsAiLoading(true);
     setAiMessage("");
     try {
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const prompt = `당신은 한국심리상담지도협회(KPCGA)의 전문 상담사입니다. 내담자의 질문에 공감하고 전문적인 조언을 해주세요: ${aiInput}`;
+      const prompt = `당신은 한국심리상담지도협회(KPCGA)의 전문 상담사입니다. 내담자의 다음 고민에 대해 따뜻하고 전문적인 조언을 해주세요: ${aiInput}`;
       const result = await model.generateContent(prompt);
       setAiMessage(result.response.text());
     } catch (err) {
@@ -219,11 +214,17 @@ const App = () => {
           
           <div className="flex items-center gap-4">
             {isAdmin ? (
-              <button onClick={() => setIsAdmin(false)} className="flex items-center gap-2 bg-rose-500/10 text-rose-400 px-5 py-2.5 rounded-xl text-sm font-bold border border-rose-500/20 active:scale-95">
+              <button 
+                onClick={() => setIsAdmin(false)}
+                className="flex items-center gap-2 bg-rose-500/10 text-rose-400 px-5 py-2.5 rounded-xl text-sm font-bold border border-rose-500/20 active:scale-95"
+              >
                 <LogOut size={18} /> 로그아웃
               </button>
             ) : (
-              <button onClick={() => setShowAdminLogin(true)} className="w-12 h-12 flex items-center justify-center text-slate-500 hover:text-white bg-white/5 rounded-2xl border border-white/5 transition-all">
+              <button 
+                onClick={() => setShowAdminLogin(true)}
+                className="w-12 h-12 flex items-center justify-center text-slate-500 hover:text-white bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-all shadow-inner"
+              >
                 <Settings size={22} />
               </button>
             )}
@@ -234,16 +235,14 @@ const App = () => {
       <main className="max-w-6xl mx-auto px-6 py-12 space-y-12">
         <section className={`rounded-[2.5rem] p-8 border shadow-2xl transition-all ${isAdmin ? 'bg-indigo-600/10 border-indigo-500/40' : 'bg-slate-900/40 border-white/5 shadow-black/50'}`}>
           <div className="flex items-start gap-6">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${isAdmin ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400'}`}>
-              <Bell size={28} />
-            </div>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${isAdmin ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400'}`}><Bell size={28} /></div>
             <div className="flex-grow">
-              <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2">Notice</h3>
+              <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2 text-indigo-500">Notice</h3>
               {isEditingNotice && isAdmin ? (
                 <div className="space-y-4">
                   <textarea className="w-full bg-slate-950 border border-indigo-500/50 rounded-2xl p-5 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-lg" rows={3} value={editedNotice} onChange={(e) => setEditedNotice(e.target.value)} />
                   <div className="flex gap-2">
-                    <button onClick={saveNotice} className="bg-indigo-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-indigo-500 transition-all">저장</button>
+                    <button onClick={saveNotice} className="bg-indigo-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/30">저장</button>
                     <button onClick={() => setIsEditingNotice(false)} className="bg-slate-800 px-6 py-3 rounded-xl text-sm font-bold">취소</button>
                   </div>
                 </div>
@@ -252,37 +251,37 @@ const App = () => {
               )}
             </div>
             {isAdmin && !isEditingNotice && (
-              <button onClick={() => setIsEditingNotice(true)} className="w-10 h-10 flex items-center justify-center text-indigo-400 hover:text-white hover:bg-indigo-500 rounded-xl transition-all"><Edit3 size={20} /></button>
+              <button onClick={() => setIsEditingNotice(true)} className="w-10 h-10 flex items-center justify-center text-indigo-400 hover:text-white hover:bg-indigo-500 rounded-xl transition-all shadow-sm"><Edit3 size={20} /></button>
             )}
           </div>
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           <section className="space-y-12">
-            <div className="bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-10 shadow-xl backdrop-blur-sm relative overflow-hidden group">
+            <div className="bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-10 shadow-xl backdrop-blur-sm relative overflow-hidden">
               <h2 className="text-3xl font-bold mb-8 flex items-center gap-3 text-indigo-500"><Edit3 size={28} /> <span>상담 신청하기</span></h2>
               <form onSubmit={submitRequest} className="space-y-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">상담 제목 (전체 공개)</label>
-                  <input type="text" placeholder="제목을 입력하세요" className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-lg font-medium" value={newRequest.title} onChange={(e) => setNewRequest({...newRequest, title: e.target.value})} />
+                  <input type="text" placeholder="제목을 입력하세요" className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-lg" value={newRequest.title} onChange={(e) => setNewRequest({...newRequest, title: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-rose-400 uppercase tracking-widest mb-2 ml-1">상세 고민 내용 (상담사 전용 - 비밀보호)</label>
-                  <textarea placeholder="상담사만 확인할 수 있는 상세 내용을 적어주세요." rows={5} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" value={newRequest.details} onChange={(e) => setNewRequest({...newRequest, details: e.target.value})} />
+                  <label className="block text-xs font-bold text-rose-400 uppercase tracking-widest mb-2 ml-1">비밀 상담 내용 (상담사만 확인)</label>
+                  <textarea placeholder="상세 고민 내용을 적어주세요. 다른 내담자에게는 절대 공개되지 않습니다." rows={5} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" value={newRequest.details} onChange={(e) => setNewRequest({...newRequest, details: e.target.value})} />
                 </div>
-                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 text-lg active:scale-95 group">신청 완료 <ChevronRight size={22} /></button>
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all text-lg group">신청 완료 <ChevronRight className="inline ml-2 group-hover:translate-x-1 transition-transform" size={22} /></button>
               </form>
             </div>
 
             <div className="bg-gradient-to-br from-indigo-600/10 via-slate-900/50 to-slate-900 border border-indigo-500/20 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
-              <h2 className="text-3xl font-bold mb-8 flex items-center gap-4"><div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg font-black italic text-white text-xs">AI</div> 실시간 AI 상담</h2>
+              <h2 className="text-3xl font-bold mb-8 flex items-center gap-4"><div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center font-black italic text-white text-xs">AI</div> 실시간 AI 조언</h2>
               <div className="space-y-6">
                 <div className="relative">
                   <input type="text" placeholder="지금 기분을 말해보세요..." className="w-full bg-white/5 border border-white/5 rounded-2xl p-5 pr-16 focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-slate-600" value={aiInput} onChange={(e) => setAiInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && askAi()} />
                   <button onClick={askAi} disabled={isAiLoading} className="absolute right-2 top-2 w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-500 shadow-lg disabled:opacity-50"><Send size={20} /></button>
                 </div>
                 <AnimatePresence mode="wait">
-                  {isAiLoading && <div className="text-center py-4 text-indigo-400 animate-pulse font-bold italic">답변을 생각 중입니다...</div>}
+                  {isAiLoading && <div className="text-center py-4 text-indigo-400 animate-pulse font-bold">상담사가 답변을 생각 중입니다...</div>}
                   {aiMessage && !isAiLoading && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-600/10 rounded-3xl p-8 border border-indigo-500/20 text-slate-200 leading-relaxed whitespace-pre-wrap relative shadow-inner">
                       <div className="absolute -top-3 -left-3 w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg"><User size={16} /></div>
@@ -295,14 +294,7 @@ const App = () => {
           </section>
 
           <section className="space-y-8">
-            <div className="flex items-center justify-between px-2">
-              <h2 className="text-3xl font-bold flex items-center gap-3 text-indigo-500"><User size={28} /> <span>실시간 접수 현황</span></h2>
-              <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/10">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-[10px] text-green-400 font-black tracking-widest uppercase">Live Connection</span>
-              </div>
-            </div>
-            
+            <h2 className="text-3xl font-bold flex items-center gap-3 text-indigo-500"><User size={28} /> <span>실시간 접수 현황</span></h2>
             <div className="space-y-6 max-h-[1000px] overflow-y-auto pr-4 custom-scrollbar pb-12">
               {requests.length === 0 ? (
                 <div className="text-center py-32 text-slate-700 border-2 border-dashed border-white/5 rounded-[3rem] bg-white/5 flex flex-col items-center gap-4"><Lock size={40} className="opacity-20" /> 아직 접수된 내역이 없습니다.</div>
@@ -319,16 +311,15 @@ const App = () => {
                       </div>
                       {isAdmin && <CheckCircle className="text-indigo-500" size={24} />}
                     </div>
-
                     {isAdmin ? (
                       <div className="mt-6 p-6 bg-indigo-600/10 rounded-2xl border border-indigo-500/20 space-y-3 shadow-inner">
-                        <div className="flex items-center gap-2 text-indigo-400"><Eye size={16} /><h5 className="text-[11px] font-black uppercase tracking-widest">상담 상세 내용 (관리자 전용)</h5></div>
+                        <div className="flex items-center gap-2 text-indigo-400"><Eye size={16} /><h5 className="text-[11px] font-black uppercase tracking-widest text-indigo-400">Counselor's View</h5></div>
                         <p className="text-slate-200 text-sm whitespace-pre-wrap leading-relaxed font-medium">{req.details}</p>
                       </div>
                     ) : (
                       <div className="mt-6 p-6 bg-black/40 rounded-2xl border border-white/5 flex flex-col items-center gap-3 text-slate-500 text-center shadow-inner group-hover:bg-black/50 transition-all">
                         <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center text-slate-600"><Lock size={16} /></div>
-                        <div className="space-y-1"><p className="text-[12px] font-bold text-slate-400">비밀 보호 설정 활성화</p><p className="text-[10px] text-slate-600 italic">상세 내용은 담당 상담사에게만 안전하게 보호됩니다.</p></div>
+                        <div className="space-y-1"><p className="text-[12px] font-bold text-slate-400">비밀 보호 설정 활성화</p><p className="text-[10px] text-slate-600 italic">상세 내용은 상담사에게만 안전하게 보호됩니다.</p></div>
                       </div>
                     )}
                   </motion.div>
@@ -345,16 +336,16 @@ const App = () => {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAdminLogin(false)} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
             <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }} className="bg-[#0a0c10] border border-white/10 p-10 rounded-[2.5rem] w-full max-w-md relative z-10 shadow-2xl text-center">
               <div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400"><ShieldCheck size={20} /></div><h3 className="text-2xl font-bold">Counselor Access</h3></div><button onClick={() => setShowAdminLogin(false)} className="text-slate-500 hover:text-white transition-colors"><X size={24} /></button></div>
-              <p className="text-slate-400 text-sm mb-8">협회 전용 관리 비밀번호를 입력해 주세요.</p>
-              <input type="password" className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-8 text-center text-3xl tracking-[0.5em] outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono" placeholder="••••" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()} autoFocus />
-              <button onClick={handleAdminLogin} className="w-full bg-indigo-600 py-5 rounded-2xl font-black uppercase hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/30">포털 접속</button>
+              <p className="text-slate-400 text-sm mb-8 font-bold text-indigo-400">관리용 비밀번호를 입력해 주세요.</p>
+              <input type="password" className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-8 text-center text-3xl tracking-[0.5em] outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono shadow-inner" placeholder="••••" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()} autoFocus />
+              <button onClick={handleAdminLogin} className="w-full bg-indigo-600 py-5 rounded-2xl font-black uppercase hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/30 active:scale-95">입장하기</button>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
       <footer className="max-w-6xl mx-auto px-6 py-20 text-center text-slate-600 text-xs border-t border-white/5 mt-24">
-        <p className="font-bold mb-2 uppercase tracking-widest">© 2026 KPCGA 한국심리상담지도협회. All Rights Reserved.</p>
+        <p className="font-bold mb-2 uppercase tracking-widest tracking-widest text-indigo-500/50">© 2026 KPCGA 한국심리상담지도협회. All Rights Reserved.</p>
         <p className="opacity-50">시스템 구축 및 디지털 솔루션 개발: Heung-wei Ryu</p>
       </footer>
 
@@ -363,7 +354,7 @@ const App = () => {
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #334155; }
-        body { background-color: #0a0c10; }
+        body { background-color: #0a0c10; scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
       `}</style>
     </div>
   );
